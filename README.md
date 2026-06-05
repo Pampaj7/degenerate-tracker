@@ -28,6 +28,26 @@ SQLite is used initially through a small database wrapper. That keeps the first 
 
 Never commit `.env`. Tokens are read from environment variables and are not logged.
 
+### Invite URL
+
+If the bot is not in your server yet:
+
+1. Open the Discord Developer Portal.
+2. Select the DegenerateTracker application.
+3. Go to `OAuth2` -> `URL Generator`.
+4. Select scopes:
+   - `bot`
+   - `applications.commands`
+5. Select bot permissions:
+   - `View Channels`
+   - `Send Messages`
+   - `Use Slash Commands`
+   - `Embed Links`
+   - `Read Message History`
+6. Open the generated URL and invite the bot to your server.
+
+After the bot is invited and the app is running, slash commands should appear in Discord. If global slash commands are slow to appear, set `GUILD_ID` in `.env` to your server ID and restart the app.
+
 ## Riot API Setup
 
 1. Create a developer account at <https://developer.riotgames.com/>.
@@ -80,6 +100,227 @@ docker compose logs -f
 ```
 
 The single service runs both the Discord bot and Dash dashboard in one Python process. This is the simplest stable initial deployment. If the dashboard or poller grows heavy, split them into separate services that share the same SQLite volume or move to Postgres.
+
+## Complete Discord Usage Guide
+
+This is the normal flow once the bot has been invited to the server.
+
+### 1. Start The App
+
+Run one of these:
+
+```bash
+python -m app.main
+```
+
+or:
+
+```bash
+docker compose up -d --build
+docker compose logs -f
+```
+
+Successful startup should show:
+
+- the SQLite database was initialized
+- Dash is running on port `8050`
+- slash commands were synced
+- the bot logged in as `DegenerateTracker`
+- the Riot poller started
+
+The dashboard is available locally at:
+
+```text
+http://127.0.0.1:8050
+```
+
+On another device in the same LAN, use the host machine IP:
+
+```text
+http://SERVER_LAN_IP:8050
+```
+
+### 2. Users Opt In
+
+Each friend must explicitly opt in before being tracked:
+
+```text
+/optin
+```
+
+This creates the user row and allows the bot to track linked Riot data and League presence sessions.
+
+To stop future tracking:
+
+```text
+/optout
+```
+
+To delete all stored data:
+
+```text
+/delete_my_data
+```
+
+### 3. Users Link Riot Accounts
+
+Each opted-in user links their Riot ID:
+
+```text
+/lol_link game_name tag_line
+```
+
+Example:
+
+```text
+/lol_link game_name:Faker tag_line:KR1
+```
+
+Do not include the `#` in the tag line. `Faker#KR1` becomes `game_name:Faker` and `tag_line:KR1`.
+
+To unlink:
+
+```text
+/lol_unlink
+```
+
+### 4. Wait For Polling
+
+The poller runs every `POLL_INTERVAL_SECONDS`, default `300` seconds. On each poll it:
+
+- checks every opted-in linked account
+- fetches recent match IDs
+- stores new match details
+- stores ranked snapshots
+- recomputes daily summaries
+
+If someone just linked their account, wait up to five minutes or restart the app to force the first poll sooner.
+
+### 5. Daily Server Chaos
+
+Use these commands in Discord:
+
+```text
+/status
+```
+
+Shows whether the bot is alive, how many linked users it sees, the poll interval, and the dashboard URL.
+
+```text
+/leaderboard period:today metric:games
+```
+
+Shows who has played the most today. This is the main "most degenerate" board.
+
+Useful leaderboard variants:
+
+```text
+/leaderboard period:today metric:lp_delta
+/leaderboard period:7 days metric:games
+/leaderboard period:7 days metric:winrate
+```
+
+```text
+/roast
+/roast user:@friend
+```
+
+Generates a light roast from recent stats. It is intentionally silly, not meant to be hostile.
+
+### 6. Player Commands
+
+```text
+/lol_today
+/lol_today user:@friend
+```
+
+Shows today's games, win/loss, winrate, KDA, deaths, LP delta, and time played.
+
+```text
+/lol_week
+/lol_week user:@friend
+```
+
+Same idea, but for the last seven days.
+
+```text
+/lol_recent count:5
+/lol_recent user:@friend count:10
+```
+
+Shows recent stored matches with champion, queue, result, and KDA.
+
+```text
+/lol_rank
+/lol_rank user:@friend
+```
+
+Shows the latest stored ranked snapshot.
+
+```text
+/lol_dashboard
+/lol_dashboard user:@friend
+```
+
+Returns a direct dashboard link for that player.
+
+```text
+/lol_compare user_a:@friend1 user_b:@friend2 period:7 days
+```
+
+Compares games, winrate, LP delta, KDA, deaths, and time played.
+
+### 7. Dashboard Workflow
+
+Use the dashboard when the Discord commands are not enough.
+
+Pages:
+
+- `/` for server overview, total games, ranked games, LP movement, winners, losers, and leaderboard.
+- `/player/<discord_user_id>` for detailed player stats.
+- `/compare` for side-by-side player comparison.
+- `/champion` for champion-specific stats.
+
+Recommended ritual:
+
+1. Run `/leaderboard period:today metric:games`.
+2. Open `/lol_dashboard` for the current top degenerate.
+3. Check playtime, deaths per game, LP delta, and champion winrate.
+4. Post `/roast user:@friend` when the evidence is overwhelming.
+
+### 8. Common Problems
+
+Slash commands do not appear:
+
+- restart the app
+- set `GUILD_ID` in `.env` to your Discord server ID
+- wait a minute after startup
+- make sure the bot was invited with `applications.commands`
+
+Presence tracking does not work:
+
+- enable `Presence Intent` in the Discord Developer Portal
+- make sure users have opted in
+- make sure Discord actually shows League of Legends as their activity
+
+Riot linking fails:
+
+- check `RIOT_API_KEY`
+- Riot development keys expire often
+- check `RIOT_REGION_CLUSTER` and `RIOT_PLATFORM_ROUTING`
+- do not include `#` in the Riot tag line
+
+Dashboard opens only on the host machine:
+
+- use `http://SERVER_LAN_IP:8050` from other LAN devices
+- set `PUBLIC_DASHBOARD_URL` if you expose it through Tailscale, WireGuard, or Cloudflare Tunnel
+
+The leaderboard is empty:
+
+- users need to run `/optin`
+- users need to run `/lol_link`
+- wait for the poller
+- make sure Riot API calls are succeeding
 
 ## Ubuntu 24/7 Hosting
 
