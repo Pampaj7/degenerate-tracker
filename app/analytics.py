@@ -18,6 +18,9 @@ QUEUE_FILTERS = {
     "aram": "ARAM",
     "normal": "Normal",
 }
+DISCORD_ONLINE_TYPE = "discord_online"
+DISCORD_VOICE_TYPE = "discord_voice"
+LEAGUE_ACTIVITY_TYPE = "league_of_legends"
 
 
 def _connect(db_path: Path | str = DEFAULT_DB_PATH) -> sqlite3.Connection:
@@ -206,6 +209,109 @@ def player_options(db_path: Path | str = DEFAULT_DB_PATH) -> list[dict[str, str]
             """
         ).fetchall()
     return [{"label": row["label"], "value": row["discord_user_id"]} for row in rows]
+
+
+def _presence_duration(row: pd.Series, period_start: int | None, period_end: int) -> int:
+    start_ts = int(row["start_ts"] or 0)
+    end_ts = int(row["end_ts"] or period_end)
+    clipped_start = max(start_ts, period_start or 0)
+    clipped_end = min(end_ts, period_end)
+    return max(0, clipped_end - clipped_start)
+
+
+def load_presence_sessions(
+    user_id: str | None = None,
+    period: str = "today",
+    db_path: Path | str = DEFAULT_DB_PATH,
+) -> pd.DataFrame:
+    period_start = get_period_start(period)
+    now = utc_now_ts()
+    clauses = []
+    params: list[Any] = []
+    if user_id:
+        clauses.append("p.discord_user_id=?")
+        params.append(user_id)
+    if period_start is not None:
+        clauses.append("COALESCE(p.end_ts, ?) >= ?")
+        params.extend([now, period_start])
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+    with _connect(db_path) as conn:
+        df = pd.read_sql_query(
+            f"""
+            SELECT p.*, u.display_name
+            FROM presence_sessions p
+            LEFT JOIN users u ON u.discord_user_id = p.discord_user_id
+            {where}
+            ORDER BY p.start_ts DESC
+            """,
+            conn,
+            params=params,
+        )
+    if df.empty:
+        return df
+    df["effective_duration_seconds"] = df.apply(
+        lambda row: _presence_duration(row, period_start, now),
+        axis=1,
+    )
+    return df[df["effective_duration_seconds"] > 0]
+
+
+def aggregate_discord_presence(
+    user_id: str,
+    period: str = "today",
+    db_path: Path | str = DEFAULT_DB_PATH,
+) -> dict[str, Any]:
+    df = load_presence_sessions(user_id, period, db_path)
+    if df.empty:
+        return {
+            "online_seconds": 0,
+            "voice_seconds": 0,
+            "league_presence_seconds": 0,
+            "open_sessions": 0,
+            "sessions": 0,
+        }
+    grouped = df.groupby("activity_type")["effective_duration_seconds"].sum().to_dict()
+    return {
+        "online_seconds": int(grouped.get(DISCORD_ONLINE_TYPE, 0)),
+        "voice_seconds": int(grouped.get(DISCORD_VOICE_TYPE, 0)),
+        "league_presence_seconds": int(grouped.get(LEAGUE_ACTIVITY_TYPE, 0)),
+        "open_sessions": int(df["end_ts"].isna().sum()),
+        "sessions": int(len(df)),
+    }
+
+
+def aggregate_discord_presence_leaderboard(
+    period: str = "today",
+    metric: str = "voice_seconds",
+    db_path: Path | str = DEFAULT_DB_PATH,
+) -> pd.DataFrame:
+    df = load_presence_sessions(period=period, db_path=db_path)
+    columns = ["discord_user_id", "display_name", "online_seconds", "voice_seconds", "league_presence_seconds"]
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+    pivot = (
+        df.pivot_table(
+            index=["discord_user_id", "display_name"],
+            columns="activity_type",
+            values="effective_duration_seconds",
+            aggfunc="sum",
+            fill_value=0,
+        )
+        .reset_index()
+        .rename_axis(None, axis=1)
+    )
+    for activity_type in (DISCORD_ONLINE_TYPE, DISCORD_VOICE_TYPE, LEAGUE_ACTIVITY_TYPE):
+        if activity_type not in pivot.columns:
+            pivot[activity_type] = 0
+    pivot = pivot.rename(
+        columns={
+            DISCORD_ONLINE_TYPE: "online_seconds",
+            DISCORD_VOICE_TYPE: "voice_seconds",
+            LEAGUE_ACTIVITY_TYPE: "league_presence_seconds",
+        }
+    )
+    sort_metric = metric if metric in pivot.columns else "voice_seconds"
+    return pivot[columns].sort_values(sort_metric, ascending=False)
 
 
 def recompute_daily_summary(user_id: str, date_utc: str, db_path: Path | str = DEFAULT_DB_PATH) -> None:

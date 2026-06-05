@@ -13,6 +13,7 @@ It is meant to be funny, mildly shameful, and actually useful. Nobody is tracked
 - A background poller stores recent Match-V5 matches and League-V4 ranked snapshots.
 - Discord presence updates store League of Legends play sessions for opted-in users.
 - `/leaderboard` ranks the server by games, winrate, LP movement, and playtime so everyone can see who is currently the most degenerate.
+- `/discord_time` and `/discord_leaderboard` show opted-in Discord online and voice time.
 - `/roast` adds a light Discord roast based on recent stats.
 - The dashboard exposes server overview, player profile, player comparison, and champion analytics pages.
 
@@ -148,7 +149,7 @@ Each friend must explicitly opt in before being tracked:
 /optin
 ```
 
-This creates the user row and allows the bot to track linked Riot data and League presence sessions.
+This creates the user row and allows the bot to track linked Riot data, League presence sessions, Discord online presence, and Discord voice channel time.
 
 To stop future tracking:
 
@@ -227,7 +228,36 @@ Useful leaderboard variants:
 
 Generates a light roast from recent stats. It is intentionally silly, not meant to be hostile.
 
-### 6. Player Commands
+### 6. Discord Server Time
+
+DegenerateTracker can also show how long opted-in users are around Discord.
+
+Important limitation: Discord does not expose "time spent reading this specific server". The bot tracks two practical signals instead:
+
+- online presence for opted-in server members
+- time spent in voice channels in this server
+
+User summary:
+
+```text
+/discord_time
+/discord_time user:@friend period:today
+```
+
+Server leaderboard:
+
+```text
+/discord_leaderboard period:today metric:voice_seconds
+/discord_leaderboard period:7 days metric:online_seconds
+```
+
+The useful metrics are:
+
+- `voice_seconds`
+- `online_seconds`
+- `league_presence_seconds`
+
+### 7. Player Commands
 
 ```text
 /lol_today
@@ -270,7 +300,7 @@ Returns a direct dashboard link for that player.
 
 Compares games, winrate, LP delta, KDA, deaths, and time played.
 
-### 7. Dashboard Workflow
+### 8. Dashboard Workflow
 
 Use the dashboard when the Discord commands are not enough.
 
@@ -288,7 +318,7 @@ Recommended ritual:
 3. Check playtime, deaths per game, LP delta, and champion winrate.
 4. Post `/roast user:@friend` when the evidence is overwhelming.
 
-### 8. Common Problems
+### 9. Common Problems
 
 Slash commands do not appear:
 
@@ -302,6 +332,7 @@ Presence tracking does not work:
 - enable `Presence Intent` in the Discord Developer Portal
 - make sure users have opted in
 - make sure Discord actually shows League of Legends as their activity
+- remember that text-channel reading time is not available from the Discord API
 
 Riot linking fails:
 

@@ -1,7 +1,13 @@
 import sqlite3
 from pathlib import Path
 
-from app.analytics import aggregate_leaderboard, aggregate_user_stats, estimate_lp_delta
+from app.analytics import (
+    aggregate_discord_presence,
+    aggregate_discord_presence_leaderboard,
+    aggregate_leaderboard,
+    aggregate_user_stats,
+    estimate_lp_delta,
+)
 from app.db import SCHEMA
 
 
@@ -70,3 +76,32 @@ def test_leaderboard_and_lp_delta(tmp_path):
     assert board.iloc[0]["discord_user_id"] == "1"
     assert lp["delta"] == 125
     assert "Gold IV 20 LP -> Gold III 45 LP" in lp["text"]
+
+
+def test_discord_presence_aggregation(tmp_path):
+    db_path = tmp_path / "test.sqlite"
+    _create_db(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO presence_sessions(
+                discord_user_id, guild_id, activity_type, activity_name,
+                start_ts, end_ts, duration_seconds, closed_reason
+            )
+            VALUES
+              ('1', '10', 'discord_online', 'Online', 1_700_000_000, 1_700_003_600, 3600, 'offline'),
+              ('1', '10', 'discord_voice', 'General', 1_700_000_600, 1_700_001_500, 900, 'voice_left'),
+              ('1', '10', 'league_of_legends', 'League of Legends', 1_700_000_100, 1_700_001_900, 1800, 'activity_ended'),
+              ('2', '10', 'discord_voice', 'General', 1_700_000_000, 1_700_000_300, 300, 'voice_left')
+            """
+        )
+        conn.commit()
+
+    stats = aggregate_discord_presence("1", "all", db_path)
+    board = aggregate_discord_presence_leaderboard("all", "voice_seconds", db_path)
+
+    assert stats["online_seconds"] == 3600
+    assert stats["voice_seconds"] == 900
+    assert stats["league_presence_seconds"] == 1800
+    assert board.iloc[0]["discord_user_id"] == "1"

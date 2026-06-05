@@ -302,9 +302,9 @@ class Database:
         open_session = await self.fetchone(
             """
             SELECT id FROM presence_sessions
-            WHERE discord_user_id=? AND guild_id=? AND activity_name=? AND end_ts IS NULL
+            WHERE discord_user_id=? AND guild_id=? AND activity_type=? AND activity_name=? AND end_ts IS NULL
             """,
-            (discord_user_id, guild_id, activity_name),
+            (discord_user_id, guild_id, activity_type, activity_name),
         )
         if open_session:
             return
@@ -316,15 +316,31 @@ class Database:
             (discord_user_id, guild_id, activity_type, activity_name, utc_now_ts()),
         )
 
-    async def close_presence_session(self, discord_user_id: str, guild_id: str, reason: str) -> None:
+    async def close_presence_session(
+        self,
+        discord_user_id: str,
+        guild_id: str,
+        reason: str,
+        activity_type: str | None = None,
+        activity_name: str | None = None,
+    ) -> None:
         now = utc_now_ts()
+        clauses = ["discord_user_id=?", "guild_id=?", "end_ts IS NULL"]
+        params: list[Any] = [discord_user_id, guild_id]
+        if activity_type is not None:
+            clauses.append("activity_type=?")
+            params.append(activity_type)
+        if activity_name is not None:
+            clauses.append("activity_name=?")
+            params.append(activity_name)
+        params = [now, now, reason, *params]
         await self.execute(
-            """
+            f"""
             UPDATE presence_sessions
             SET end_ts=?, duration_seconds=? - start_ts, closed_reason=?
-            WHERE discord_user_id=? AND guild_id=? AND end_ts IS NULL
+            WHERE {' AND '.join(clauses)}
             """,
-            (now, now, reason, discord_user_id, guild_id),
+            tuple(params),
         )
 
     async def close_stale_presence_sessions(self) -> None:
@@ -337,4 +353,3 @@ class Database:
             """,
             (now, now),
         )
-

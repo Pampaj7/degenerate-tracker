@@ -6,7 +6,14 @@ from typing import Any
 import discord
 from discord import app_commands
 
-from app.analytics import aggregate_leaderboard, aggregate_user_stats, latest_rank, load_matches
+from app.analytics import (
+    aggregate_discord_presence,
+    aggregate_discord_presence_leaderboard,
+    aggregate_leaderboard,
+    aggregate_user_stats,
+    latest_rank,
+    load_matches,
+)
 from app.config import Settings
 from app.db import Database
 from app.formatters import format_duration, ts_to_utc_date
@@ -177,6 +184,42 @@ def setup_commands(
             ephemeral=True,
         )
 
+    @tree.command(name="discord_time", description="Show tracked Discord online and voice time")
+    async def discord_time(
+        interaction: discord.Interaction,
+        user: discord.User | None = None,
+        period: str = "today",
+    ) -> None:
+        target = _target_user(interaction, user)
+        stats = await asyncio.to_thread(aggregate_discord_presence, str(target.id), period, db.path)
+        await interaction.response.send_message(
+            f"**{_display_name(target)}** Discord time ({period})\n"
+            f"Online: {format_duration(stats['online_seconds'])}\n"
+            f"Voice: {format_duration(stats['voice_seconds'])}\n"
+            f"LoL activity visible on Discord: {format_duration(stats['league_presence_seconds'])}\n"
+            f"Open sessions: {stats['open_sessions']}"
+        )
+
+    @tree.command(name="discord_leaderboard", description="Show Discord presence leaderboard")
+    async def discord_leaderboard(
+        interaction: discord.Interaction,
+        period: str = "today",
+        metric: str = "voice_seconds",
+    ) -> None:
+        await interaction.response.defer()
+        board = await asyncio.to_thread(aggregate_discord_presence_leaderboard, period, metric, db.path)
+        if board.empty:
+            await interaction.followup.send("No tracked Discord presence sessions for that period yet.")
+            return
+        lines = []
+        for index, row in enumerate(board.head(10).itertuples(), start=1):
+            name = row.display_name or row.discord_user_id
+            lines.append(
+                f"{index}. {name}: online {format_duration(row.online_seconds)}, "
+                f"voice {format_duration(row.voice_seconds)}, LoL visible {format_duration(row.league_presence_seconds)}"
+            )
+        await interaction.followup.send("```text\n" + "\n".join(lines) + "\n```")
+
 
 async def _stats_response(
     interaction: discord.Interaction,
@@ -192,4 +235,3 @@ async def _stats_response(
         f"Avg KDA: {stats['avg_kda']} | Avg deaths: {stats['avg_deaths']} | LP: {stats['lp_delta_text']}\n"
         f"Time played: {format_duration(stats['total_duration_seconds'])}"
     )
-

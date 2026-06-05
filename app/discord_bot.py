@@ -48,10 +48,17 @@ class DegenerateTrackerBot(commands.Bot):
     async def on_presence_update(self, before: discord.Member, after: discord.Member) -> None:
         await self.presence_tracker.handle_presence_update(before, after)
 
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ) -> None:
+        await self.presence_tracker.handle_voice_state_update(member, before, after)
+
     async def close(self) -> None:
         self.poller.stop()
         if self._poller_task:
             await self._poller_task
         await self.riot_client.close()
         await super().close()
-
