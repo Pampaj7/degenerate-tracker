@@ -1,0 +1,2 @@
+"""DegenerateTracker Analytics application package."""
+

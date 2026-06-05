@@ -1,0 +1,12 @@
+services:
+  degenerate-tracker:
+    build: .
+    container_name: degenerate-tracker
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${DASH_PORT:-8050}:${DASH_PORT:-8050}"
+    volumes:
+      - ./data:/app/data
+
