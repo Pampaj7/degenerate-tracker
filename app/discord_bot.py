@@ -5,7 +5,7 @@ import logging
 import discord
 from discord.ext import commands
 
-from app.commands import setup_commands
+from app.commands import OptInView, setup_commands
 from app.config import Settings
 from app.db import Database
 from app.poller import RiotPoller
@@ -30,6 +30,7 @@ class DegenerateTrackerBot(commands.Bot):
         self._poller_task = None
 
     async def setup_hook(self) -> None:
+        self.add_view(OptInView(self.db))
         setup_commands(self.tree, self.db, self.riot_client, self.settings)
         await self.presence_tracker.close_stale_sessions()
         if self.settings.guild_id:

@@ -39,6 +39,21 @@ async def _ensure_user(db: Database, interaction: discord.Interaction) -> None:
     await db.upsert_user(discord_user_id, guild_id, _display_name(interaction.user), opted_in=False)
 
 
+class OptInView(discord.ui.View):
+    def __init__(self, db: Database):
+        super().__init__(timeout=None)
+        self.db = db
+
+    @discord.ui.button(label="Opt in", style=discord.ButtonStyle.success, custom_id="degenerate_tracker:optin")
+    async def opt_in_button(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        discord_user_id, guild_id = _ids(interaction)
+        await self.db.upsert_user(discord_user_id, guild_id, _display_name(interaction.user), opted_in=True)
+        await interaction.response.send_message(
+            "You are opted in. Link your Riot account with `/lol_link`, or just let Discord presence tracking run.",
+            ephemeral=True,
+        )
+
+
 def setup_commands(
     tree: app_commands.CommandTree,
     db: Database,
@@ -50,6 +65,16 @@ def setup_commands(
         discord_user_id, guild_id = _ids(interaction)
         await db.upsert_user(discord_user_id, guild_id, _display_name(interaction.user), opted_in=True)
         await interaction.response.send_message("You are opted in. Link your Riot account with `/lol_link`.", ephemeral=True)
+
+    @tree.command(name="optin_panel", description="Post a one-click opt-in panel")
+    @app_commands.default_permissions(manage_guild=True)
+    async def optin_panel(interaction: discord.Interaction) -> None:
+        await interaction.response.send_message(
+            "**DegenerateTracker opt-in**\n"
+            "Click the button to join the server stats. This enables Discord presence, voice, and visible game tracking. "
+            "League stats still require `/lol_link`.",
+            view=OptInView(db),
+        )
 
     @tree.command(name="optout", description="Stop future tracking without deleting existing data")
     async def optout(interaction: discord.Interaction) -> None:

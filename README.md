@@ -9,6 +9,7 @@ It is meant to be funny, mildly shameful, and actually useful. Nobody is tracked
 ## What It Does
 
 - `/optin`, `/optout`, and `/delete_my_data` give users explicit control over tracking.
+- `/optin_panel` posts a one-click server opt-in button.
 - `/lol_link game_name tag_line` resolves a Riot ID to PUUID through Account-V1.
 - A background poller stores recent Match-V5 matches and League-V4 ranked snapshots.
 - Discord presence updates store League of Legends play sessions for opted-in users.
@@ -163,6 +164,14 @@ To delete all stored data:
 /delete_my_data
 ```
 
+Admins can also post a one-click opt-in panel:
+
+```text
+/optin_panel
+```
+
+That posts a button in the current channel. Users who click it are opted in immediately. This is the recommended way to onboard the whole server without silently tracking anyone.
+
 ### 3. Users Link Riot Accounts
 
 Each opted-in user links their Riot ID:
@@ -237,6 +246,8 @@ Important limitation: Discord does not expose "time spent reading this specific 
 - online presence for opted-in server members
 - time spent in voice channels in this server
 - games Discord exposes as `Playing X`
+
+These are tracked only for users who opted in with `/optin`, `/lol_link`, or the `/optin_panel` button.
 
 User summary:
 
