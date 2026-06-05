@@ -12,16 +12,18 @@ logger = logging.getLogger(__name__)
 LEAGUE_ACTIVITY_NAMES = {"league of legends", "league client"}
 DISCORD_ONLINE_TYPE = "discord_online"
 DISCORD_VOICE_TYPE = "discord_voice"
-LEAGUE_ACTIVITY_TYPE = "league_of_legends"
+DISCORD_GAME_TYPE = "discord_game"
 ONLINE_ACTIVITY_NAME = "Online"
 
 
-def _league_activity(member: discord.Member) -> discord.Activity | discord.Game | None:
+def _game_activity_names(member: discord.Member) -> set[str]:
+    names: set[str] = set()
     for activity in member.activities:
         name = getattr(activity, "name", None)
-        if name and name.lower() in LEAGUE_ACTIVITY_NAMES:
-            return activity
-    return None
+        activity_type = getattr(activity, "type", None)
+        if name and activity_type is discord.ActivityType.playing:
+            names.add(name)
+    return names
 
 
 class PresenceTracker:
@@ -49,19 +51,28 @@ class PresenceTracker:
                 activity_type=DISCORD_ONLINE_TYPE,
             )
 
-        before_activity = _league_activity(before)
-        after_activity = _league_activity(after)
-        if before_activity is None and after_activity is not None:
-            await self.db.start_presence_session(discord_user_id, guild_id, LEAGUE_ACTIVITY_TYPE, after_activity.name)
-        elif before_activity is not None and after_activity is None:
+        before_games = _game_activity_names(before)
+        after_games = _game_activity_names(after)
+
+        for game_name in sorted(before_games - after_games):
             await self.db.close_presence_session(
                 discord_user_id,
                 guild_id,
                 "activity_ended",
-                activity_type=LEAGUE_ACTIVITY_TYPE,
+                activity_type=DISCORD_GAME_TYPE,
+                activity_name=game_name,
             )
-        elif after.status is discord.Status.offline:
-            await self.db.close_presence_session(discord_user_id, guild_id, "offline")
+
+        for game_name in sorted(after_games - before_games):
+            await self.db.start_presence_session(discord_user_id, guild_id, DISCORD_GAME_TYPE, game_name)
+
+        if after.status is discord.Status.offline:
+            await self.db.close_presence_session(
+                discord_user_id,
+                guild_id,
+                "offline",
+                activity_type=DISCORD_GAME_TYPE,
+            )
 
     async def handle_voice_state_update(
         self,

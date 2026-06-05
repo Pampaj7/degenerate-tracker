@@ -9,6 +9,7 @@ from discord import app_commands
 from app.analytics import (
     aggregate_discord_presence,
     aggregate_discord_presence_leaderboard,
+    aggregate_game_presence_leaderboard,
     aggregate_leaderboard,
     aggregate_user_stats,
     latest_rank,
@@ -196,8 +197,10 @@ def setup_commands(
             f"**{_display_name(target)}** Discord time ({period})\n"
             f"Online: {format_duration(stats['online_seconds'])}\n"
             f"Voice: {format_duration(stats['voice_seconds'])}\n"
+            f"Games visible on Discord: {format_duration(stats['game_seconds'])}\n"
             f"LoL activity visible on Discord: {format_duration(stats['league_presence_seconds'])}\n"
-            f"Open sessions: {stats['open_sessions']}"
+            f"Open sessions: {stats['open_sessions']}\n"
+            f"Top games: {_format_top_games(stats['top_games'])}"
         )
 
     @tree.command(name="discord_leaderboard", description="Show Discord presence leaderboard")
@@ -216,8 +219,22 @@ def setup_commands(
             name = row.display_name or row.discord_user_id
             lines.append(
                 f"{index}. {name}: online {format_duration(row.online_seconds)}, "
-                f"voice {format_duration(row.voice_seconds)}, LoL visible {format_duration(row.league_presence_seconds)}"
+                f"voice {format_duration(row.voice_seconds)}, games {format_duration(row.game_seconds)}, "
+                f"LoL visible {format_duration(row.league_presence_seconds)}"
             )
+        await interaction.followup.send("```text\n" + "\n".join(lines) + "\n```")
+
+    @tree.command(name="game_leaderboard", description="Show visible Discord game activity leaderboard")
+    async def game_leaderboard(interaction: discord.Interaction, period: str = "today") -> None:
+        await interaction.response.defer()
+        board = await asyncio.to_thread(aggregate_game_presence_leaderboard, period, db.path)
+        if board.empty:
+            await interaction.followup.send("No tracked game activity for that period yet.")
+            return
+        lines = [
+            f"{index}. {row.activity_name}: {format_duration(row.seconds)}"
+            for index, row in enumerate(board.head(10).itertuples(), start=1)
+        ]
         await interaction.followup.send("```text\n" + "\n".join(lines) + "\n```")
 
 
@@ -235,3 +252,9 @@ async def _stats_response(
         f"Avg KDA: {stats['avg_kda']} | Avg deaths: {stats['avg_deaths']} | LP: {stats['lp_delta_text']}\n"
         f"Time played: {format_duration(stats['total_duration_seconds'])}"
     )
+
+
+def _format_top_games(top_games: list[tuple[str, int]]) -> str:
+    if not top_games:
+        return "none"
+    return ", ".join(f"{name} ({format_duration(seconds)})" for name, seconds in top_games)

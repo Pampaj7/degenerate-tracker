@@ -13,7 +13,7 @@ It is meant to be funny, mildly shameful, and actually useful. Nobody is tracked
 - A background poller stores recent Match-V5 matches and League-V4 ranked snapshots.
 - Discord presence updates store League of Legends play sessions for opted-in users.
 - `/leaderboard` ranks the server by games, winrate, LP movement, and playtime so everyone can see who is currently the most degenerate.
-- `/discord_time` and `/discord_leaderboard` show opted-in Discord online and voice time.
+- `/discord_time`, `/discord_leaderboard`, and `/game_leaderboard` show opted-in Discord online, voice, and visible game time.
 - `/roast` adds a light Discord roast based on recent stats.
 - The dashboard exposes server overview, player profile, player comparison, and champion analytics pages.
 
@@ -236,6 +236,7 @@ Important limitation: Discord does not expose "time spent reading this specific 
 
 - online presence for opted-in server members
 - time spent in voice channels in this server
+- games Discord exposes as `Playing X`
 
 User summary:
 
@@ -244,17 +245,28 @@ User summary:
 /discord_time user:@friend period:today
 ```
 
+The response includes online time, voice time, total visible game time, League-specific visible time, and the user's top visible games for that period.
+
 Server leaderboard:
 
 ```text
 /discord_leaderboard period:today metric:voice_seconds
 /discord_leaderboard period:7 days metric:online_seconds
+/discord_leaderboard period:week metric:game_seconds
+```
+
+Game leaderboard:
+
+```text
+/game_leaderboard period:today
+/game_leaderboard period:week
 ```
 
 The useful metrics are:
 
 - `voice_seconds`
 - `online_seconds`
+- `game_seconds`
 - `league_presence_seconds`
 
 ### 7. Player Commands

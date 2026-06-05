@@ -20,7 +20,9 @@ QUEUE_FILTERS = {
 }
 DISCORD_ONLINE_TYPE = "discord_online"
 DISCORD_VOICE_TYPE = "discord_voice"
+DISCORD_GAME_TYPE = "discord_game"
 LEAGUE_ACTIVITY_TYPE = "league_of_legends"
+LEAGUE_ACTIVITY_NAMES = {"league of legends", "league client"}
 
 
 def _connect(db_path: Path | str = DEFAULT_DB_PATH) -> sqlite3.Connection:
@@ -266,15 +268,29 @@ def aggregate_discord_presence(
         return {
             "online_seconds": 0,
             "voice_seconds": 0,
+            "game_seconds": 0,
             "league_presence_seconds": 0,
+            "top_games": [],
             "open_sessions": 0,
             "sessions": 0,
         }
     grouped = df.groupby("activity_type")["effective_duration_seconds"].sum().to_dict()
+    game_df = df[df["activity_type"] == DISCORD_GAME_TYPE]
+    game_totals = (
+        game_df.groupby("activity_name")["effective_duration_seconds"].sum().sort_values(ascending=False)
+        if not game_df.empty
+        else pd.Series(dtype="int64")
+    )
+    legacy_lol_seconds = int(grouped.get(LEAGUE_ACTIVITY_TYPE, 0))
+    lol_game_seconds = int(
+        game_df[game_df["activity_name"].str.lower().isin(LEAGUE_ACTIVITY_NAMES)]["effective_duration_seconds"].sum()
+    ) if not game_df.empty else 0
     return {
         "online_seconds": int(grouped.get(DISCORD_ONLINE_TYPE, 0)),
         "voice_seconds": int(grouped.get(DISCORD_VOICE_TYPE, 0)),
-        "league_presence_seconds": int(grouped.get(LEAGUE_ACTIVITY_TYPE, 0)),
+        "game_seconds": int(grouped.get(DISCORD_GAME_TYPE, 0)),
+        "league_presence_seconds": legacy_lol_seconds + lol_game_seconds,
+        "top_games": [(str(name), int(seconds)) for name, seconds in game_totals.head(5).items()],
         "open_sessions": int(df["end_ts"].isna().sum()),
         "sessions": int(len(df)),
     }
@@ -286,7 +302,14 @@ def aggregate_discord_presence_leaderboard(
     db_path: Path | str = DEFAULT_DB_PATH,
 ) -> pd.DataFrame:
     df = load_presence_sessions(period=period, db_path=db_path)
-    columns = ["discord_user_id", "display_name", "online_seconds", "voice_seconds", "league_presence_seconds"]
+    columns = [
+        "discord_user_id",
+        "display_name",
+        "online_seconds",
+        "voice_seconds",
+        "game_seconds",
+        "league_presence_seconds",
+    ]
     if df.empty:
         return pd.DataFrame(columns=columns)
     pivot = (
@@ -300,18 +323,47 @@ def aggregate_discord_presence_leaderboard(
         .reset_index()
         .rename_axis(None, axis=1)
     )
-    for activity_type in (DISCORD_ONLINE_TYPE, DISCORD_VOICE_TYPE, LEAGUE_ACTIVITY_TYPE):
+    for activity_type in (DISCORD_ONLINE_TYPE, DISCORD_VOICE_TYPE, DISCORD_GAME_TYPE, LEAGUE_ACTIVITY_TYPE):
         if activity_type not in pivot.columns:
             pivot[activity_type] = 0
+    game_df = df[df["activity_type"] == DISCORD_GAME_TYPE]
+    league_from_games = (
+        game_df[game_df["activity_name"].str.lower().isin(LEAGUE_ACTIVITY_NAMES)]
+        .groupby(["discord_user_id", "display_name"], dropna=False)["effective_duration_seconds"]
+        .sum()
+        .reset_index(name="league_from_games")
+    )
     pivot = pivot.rename(
         columns={
             DISCORD_ONLINE_TYPE: "online_seconds",
             DISCORD_VOICE_TYPE: "voice_seconds",
+            DISCORD_GAME_TYPE: "game_seconds",
             LEAGUE_ACTIVITY_TYPE: "league_presence_seconds",
         }
     )
+    pivot = pivot.merge(league_from_games, on=["discord_user_id", "display_name"], how="left")
+    pivot["league_presence_seconds"] = pivot["league_presence_seconds"] + pivot["league_from_games"].fillna(0)
     sort_metric = metric if metric in pivot.columns else "voice_seconds"
     return pivot[columns].sort_values(sort_metric, ascending=False)
+
+
+def aggregate_game_presence_leaderboard(
+    period: str = "today",
+    db_path: Path | str = DEFAULT_DB_PATH,
+) -> pd.DataFrame:
+    df = load_presence_sessions(period=period, db_path=db_path)
+    columns = ["activity_name", "seconds"]
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+    game_df = df[df["activity_type"] == DISCORD_GAME_TYPE]
+    if game_df.empty:
+        return pd.DataFrame(columns=columns)
+    return (
+        game_df.groupby("activity_name")["effective_duration_seconds"]
+        .sum()
+        .reset_index(name="seconds")
+        .sort_values("seconds", ascending=False)
+    )
 
 
 def recompute_daily_summary(user_id: str, date_utc: str, db_path: Path | str = DEFAULT_DB_PATH) -> None:

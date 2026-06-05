@@ -4,6 +4,7 @@ from pathlib import Path
 from app.analytics import (
     aggregate_discord_presence,
     aggregate_discord_presence_leaderboard,
+    aggregate_game_presence_leaderboard,
     aggregate_leaderboard,
     aggregate_user_stats,
     estimate_lp_delta,
@@ -93,15 +94,23 @@ def test_discord_presence_aggregation(tmp_path):
               ('1', '10', 'discord_online', 'Online', 1_700_000_000, 1_700_003_600, 3600, 'offline'),
               ('1', '10', 'discord_voice', 'General', 1_700_000_600, 1_700_001_500, 900, 'voice_left'),
               ('1', '10', 'league_of_legends', 'League of Legends', 1_700_000_100, 1_700_001_900, 1800, 'activity_ended'),
-              ('2', '10', 'discord_voice', 'General', 1_700_000_000, 1_700_000_300, 300, 'voice_left')
+              ('1', '10', 'discord_game', 'League of Legends', 1_700_004_000, 1_700_005_800, 1800, 'activity_ended'),
+              ('1', '10', 'discord_game', 'Balatro', 1_700_006_000, 1_700_006_600, 600, 'activity_ended'),
+              ('2', '10', 'discord_voice', 'General', 1_700_000_000, 1_700_000_300, 300, 'voice_left'),
+              ('2', '10', 'discord_game', 'Balatro', 1_700_000_000, 1_700_000_300, 300, 'activity_ended')
             """
         )
         conn.commit()
 
     stats = aggregate_discord_presence("1", "all", db_path)
     board = aggregate_discord_presence_leaderboard("all", "voice_seconds", db_path)
+    games = aggregate_game_presence_leaderboard("all", db_path)
 
     assert stats["online_seconds"] == 3600
     assert stats["voice_seconds"] == 900
-    assert stats["league_presence_seconds"] == 1800
+    assert stats["game_seconds"] == 2400
+    assert stats["league_presence_seconds"] == 3600
+    assert stats["top_games"] == [("League of Legends", 1800), ("Balatro", 600)]
     assert board.iloc[0]["discord_user_id"] == "1"
+    assert games.iloc[0]["activity_name"] == "League of Legends"
+    assert games.iloc[0]["seconds"] == 1800
