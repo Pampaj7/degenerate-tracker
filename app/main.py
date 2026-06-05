@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+from contextlib import suppress
 
 from app.config import load_settings
 from app.dashboard import start_dashboard_in_thread
@@ -38,12 +39,26 @@ async def main() -> None:
     bot = DegenerateTrackerBot(db, riot_client, settings)
 
     loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: asyncio.create_task(bot.close()))
+    stop_event = asyncio.Event()
 
-    await bot.start(settings.discord_token)
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, stop_event.set)
+
+    bot_task = asyncio.create_task(bot.start(settings.discord_token))
+    stop_task = asyncio.create_task(stop_event.wait())
+    done, pending = await asyncio.wait({bot_task, stop_task}, return_when=asyncio.FIRST_COMPLETED)
+
+    if stop_task in done and not bot_task.done():
+        await bot.close()
+
+    for task in pending:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+    if bot_task in done:
+        bot_task.result()
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-
