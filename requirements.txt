@@ -1,9 +1,9 @@
 aiohttp==3.9.5
 aiosqlite==0.20.0
+audioop-lts==0.2.1; python_version >= "3.13"
 dash==2.17.1
 discord.py==2.4.0
 pandas==2.2.2
 plotly==5.22.0
 python-dotenv==1.0.1
 pytest==8.2.2
-
